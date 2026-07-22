@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "purchase": {
+    "date": "2026-07-22",
+    "merchant": "Supermercado Exemplo",
+    "payment_method": "credit_card",
+    "account": "Cartão principal",
+    "currency": "BRL",
+    "total": "95.36",
+    "discount": "2.00",
+    "notes": "Compra mensal de supermercado",
+    "items": [
+      {
+        "description": "ARROZ CAMIL TIPO 1 5KG",
+        "base_product": "Arroz",
+        "brand": "Camil",
+        "variant": "Tipo 1",
+        "package": {
+          "quantity": "5",
+          "unit": "kg",
+          "type": "pacote"
+        },
+        "purchased_quantity": "1",
+        "unit_price": "29.90",
+        "discount": "0.00",
+        "total": "29.90",
+        "category": "Alimentação",
+        "subcategory": "Mercearia",
+        "barcode": null
+      },
+      {
+        "description": "FEIJAO CARIOCA CAMIL 1KG",
+        "base_product": "Feijão",
+        "brand": "Camil",
+        "variant": "Carioca",
+        "package": {
+          "quantity": "1",
+          "unit": "kg",
+          "type": "pacote"
+        },
+        "purchased_quantity": "2",
+        "unit_price": "8.49",
+        "discount": "0.00",
+        "total": "16.98",
+        "category": "Alimentação",
+        "subcategory": "Mercearia",
+        "barcode": null
+      },
+      {
+        "description": "LEITE INTEGRAL ITALAC 1L",
+        "base_product": "Leite",
+        "brand": "Italac",
+        "variant": "Integral UHT",
+        "package": {
+          "quantity": "1",
+          "unit": "l",
+          "type": "caixa"
+        },
+        "purchased_quantity": "6",
+        "unit_price": "4.99",
+        "discount": "2.00",
+        "total": "27.94",
+        "category": "Alimentação",
+        "subcategory": "Laticínios",
+        "barcode": null
+      },
+      {
+        "description": "DETERGENTE YPE NEUTRO 500ML",
+        "base_product": "Detergente",
+        "brand": "Ypê",
+        "variant": "Neutro",
+        "package": {
+          "quantity": "500",
+          "unit": "ml",
+          "type": "frasco"
+        },
+        "purchased_quantity": "4",
+        "unit_price": "3.49",
+        "discount": "0.00",
+        "total": "13.96",
+        "category": "Casa",
+        "subcategory": "Produtos de limpeza",
+        "barcode": null
+      },
+      {
+        "description": "CHOCOLATE AO LEITE 90G",
+        "base_product": "Chocolate",
+        "brand": null,
+        "variant": "Ao leite",
+        "package": {
+          "quantity": "90",
+          "unit": "g",
+          "type": "barra"
+        },
+        "purchased_quantity": "1",
+        "unit_price": "6.58",
+        "discount": "0.00",
+        "total": "6.58",
+        "category": "Alimentação",
+        "subcategory": "Doces",
+        "barcode": null
+      }
+    ]
+  }
+}
