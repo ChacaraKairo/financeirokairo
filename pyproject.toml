@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "financeiro-kairo"
-version = "0.1.0"
-description = "Backend local do Financeiro Kairo"
+version = "0.2.0"
+description = "Aplicação desktop local de gestão financeira pessoal"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -14,6 +14,10 @@ dependencies = [
   "pydantic>=2.8,<3.0",
   "pydantic-settings>=2.4,<3.0",
   "rapidfuzz>=3.9,<4.0",
+  "PySide6>=6.7,<7.0",
+  "pandas>=2.2,<3.0",
+  "openpyxl>=3.1,<4.0",
+  "reportlab>=4.2,<5.0",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +30,7 @@ dev = [
 
 [project.scripts]
 financeiro-kairo = "financeiro_kairo.cli:main"
+financeiro-kairo-desktop = "financeiro_kairo.presentation.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/financeiro_kairo"]
@@ -33,7 +38,7 @@ packages = ["src/financeiro_kairo"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-q --strict-markers --disable-warnings"
+addopts = "-q --strict-markers --disable-warnings --cov=financeiro_kairo --cov-report=term-missing"
 
 [tool.ruff]
 target-version = "py312"
@@ -41,7 +46,8 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
