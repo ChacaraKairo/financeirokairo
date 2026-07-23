@@ -5,7 +5,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from financeiro_kairo.config import get_settings
+from financeiro_kairo.config import settings
 from financeiro_kairo.domain import models, planning_models  # noqa: F401
 from financeiro_kairo.infrastructure.database.base import Base
 
@@ -13,7 +13,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-settings = get_settings()
+settings.ensure_directories()
 config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
