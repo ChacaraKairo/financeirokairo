@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "financeiro-kairo"
-version = "0.2.0"
+version = "1.0.0"
 description = "Aplicação desktop local de gestão financeira pessoal"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -50,7 +50,8 @@ select = ["E", "F", "I", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/financeiro_kairo/presentation/app.py" = ["F401"]
+"src/financeiro_kairo/presentation/app.py" = ["F401", "I001"]
+"src/financeiro_kairo/application/facade.py" = ["F401"]
 "migrations/versions/*.py" = ["F401"]
 
 [tool.mypy]
