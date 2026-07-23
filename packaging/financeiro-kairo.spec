@@ -1,20 +1,27 @@
-from PyInstaller.utils.hooks import collect_all
+from pathlib import Path
 
-pyside_data, pyside_bins, pyside_hidden = collect_all("PySide6")
+project_root = Path(SPECPATH).parent
+entrypoint = project_root / "src/financeiro_kairo/presentation/app.py"
+source_root = project_root / "src"
 
 analysis = Analysis(
-    ["src/financeiro_kairo/presentation/app.py"],
-    pathex=["src"],
-    binaries=pyside_bins,
-    datas=pyside_data,
-    hiddenimports=pyside_hidden + [
+    [str(entrypoint)],
+    pathex=[str(source_root)],
+    binaries=[],
+    datas=[],
+    hiddenimports=[
         "financeiro_kairo.domain.models",
         "financeiro_kairo.domain.planning_models",
         "pandas",
         "openpyxl",
         "reportlab",
     ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
     noarchive=False,
+    optimize=0,
 )
 pyz = PYZ(analysis.pure)
 exe = EXE(
