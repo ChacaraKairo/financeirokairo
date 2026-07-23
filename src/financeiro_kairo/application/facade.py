@@ -13,6 +13,7 @@ from financeiro_kairo.application.services.categories import CategoryService
 from financeiro_kairo.application.services.finance import FinanceService
 from financeiro_kairo.application.services.imports import PurchaseImportService
 from financeiro_kairo.application.services.planning import PlanningService
+from financeiro_kairo.application.services.recurring_expenses import RecurringExpenseService
 from financeiro_kairo.application.services.reports import ReportService
 from financeiro_kairo.domain.models import Account, Category, Purchase
 from financeiro_kairo.domain.planning_models import Budget, Goal, Installment, InstallmentPlan
@@ -132,7 +133,9 @@ class ApplicationFacade:
 
     def purchases(self) -> list[dict[str, Any]]:
         with session_scope() as session:
-            rows = session.scalars(select(Purchase).order_by(Purchase.purchased_on.desc(), Purchase.id.desc())).all()
+            rows = session.scalars(
+                select(Purchase).order_by(Purchase.purchased_on.desc(), Purchase.id.desc())
+            ).all()
             return [
                 {
                     "id": row.id,
@@ -154,7 +157,11 @@ class ApplicationFacade:
     def budgets(self) -> list[dict[str, Any]]:
         with session_scope() as session:
             service = PlanningService(session)
-            rows = session.scalars(select(Budget).where(Budget.active.is_(True)).order_by(Budget.period_start.desc())).all()
+            rows = session.scalars(
+                select(Budget)
+                .where(Budget.active.is_(True))
+                .order_by(Budget.period_start.desc())
+            ).all()
             return [
                 {
                     "id": row.id,
@@ -188,7 +195,9 @@ class ApplicationFacade:
 
     def goals(self) -> list[dict[str, Any]]:
         with session_scope() as session:
-            rows = session.scalars(select(Goal).where(Goal.active.is_(True)).order_by(Goal.id.desc())).all()
+            rows = session.scalars(
+                select(Goal).where(Goal.active.is_(True)).order_by(Goal.id.desc())
+            ).all()
             return [
                 {
                     "id": row.id,
@@ -258,6 +267,122 @@ class ApplicationFacade:
         with session_scope() as session:
             PlanningService(session).pay_installment(installment_id, paid_on)
 
+    def recurring_expenses(self, *, include_inactive: bool = False) -> list[dict[str, Any]]:
+        with session_scope() as session:
+            rows = RecurringExpenseService(session).list_expenses(
+                include_inactive=include_inactive
+            )
+            return [
+                {
+                    "id": item.id,
+                    "description": item.description,
+                    "amount_mode": item.amount_mode,
+                    "fixed_amount_cents": item.fixed_amount_cents,
+                    "due_day": item.due_day,
+                    "reminder_days_before": item.reminder_days_before,
+                    "account_id": item.account_id,
+                    "category_id": item.category_id,
+                    "active": item.active,
+                }
+                for item in rows
+            ]
+
+    def create_recurring_expense(
+        self,
+        *,
+        description: str,
+        amount_mode: str,
+        fixed_amount_cents: int | None,
+        due_day: int,
+        reminder_days_before: int,
+        account_id: int,
+        category_id: int | None = None,
+    ) -> int:
+        with session_scope() as session:
+            item = RecurringExpenseService(session).create(
+                description=description,
+                amount_mode=amount_mode,
+                fixed_amount_cents=fixed_amount_cents,
+                due_day=due_day,
+                reminder_days_before=reminder_days_before,
+                account_id=account_id,
+                category_id=category_id,
+            )
+            return item.id
+
+    def update_recurring_expense(
+        self,
+        expense_id: int,
+        *,
+        description: str,
+        amount_mode: str,
+        fixed_amount_cents: int | None,
+        due_day: int,
+        reminder_days_before: int,
+        account_id: int,
+        category_id: int | None = None,
+        active: bool = True,
+    ) -> None:
+        with session_scope() as session:
+            RecurringExpenseService(session).update(
+                expense_id,
+                description=description,
+                amount_mode=amount_mode,
+                fixed_amount_cents=fixed_amount_cents,
+                due_day=due_day,
+                reminder_days_before=reminder_days_before,
+                account_id=account_id,
+                category_id=category_id,
+                active=active,
+            )
+
+    def recurring_expense_month(self, reference: date) -> list[dict[str, Any]]:
+        with session_scope() as session:
+            service = RecurringExpenseService(session)
+            rows = service.occurrences_for_month(reference)
+            today = date.today()
+            return [
+                {
+                    "id": item.id,
+                    "expense_id": item.expense_id,
+                    "description": item.expense.description,
+                    "amount_mode": item.expense.amount_mode,
+                    "amount_cents": item.amount_cents,
+                    "due_date": item.due_date,
+                    "paid": item.paid,
+                    "paid_on": item.paid_on,
+                    "status": service.status(item, today),
+                }
+                for item in rows
+            ]
+
+    def set_recurring_expense_amount(self, occurrence_id: int, amount_cents: int) -> None:
+        with session_scope() as session:
+            RecurringExpenseService(session).set_variable_amount(occurrence_id, amount_cents)
+
+    def pay_recurring_expense(self, occurrence_id: int, paid_on: date) -> None:
+        with session_scope() as session:
+            RecurringExpenseService(session).mark_paid(occurrence_id, paid_on)
+
+    def unpay_recurring_expense(self, occurrence_id: int) -> None:
+        with session_scope() as session:
+            RecurringExpenseService(session).mark_unpaid(occurrence_id)
+
+    def recurring_expense_reminders(self, today: date | None = None) -> list[dict[str, Any]]:
+        reference = today or date.today()
+        with session_scope() as session:
+            service = RecurringExpenseService(session)
+            return [
+                {
+                    "id": item.id,
+                    "description": item.expense.description,
+                    "due_date": item.due_date,
+                    "amount_cents": item.amount_cents,
+                    "status": service.status(item, reference),
+                }
+                for item in service.reminders(reference)
+            ]
+
     def dashboard(self, start: date, end: date) -> dict[str, Any]:
         with session_scope() as session:
             reports = ReportService(session)
@@ -275,7 +400,12 @@ class ApplicationFacade:
     def export_excel(self, target: Path, start: date, end: date) -> Path:
         with session_scope() as session:
             reports = ReportService(session)
-            rows, _ = reports.transactions_page(page=1, page_size=1_000_000, start=start, end=end)
+            rows, _ = reports.transactions_page(
+                page=1,
+                page_size=1_000_000,
+                start=start,
+                end=end,
+            )
             return reports.export_transactions_excel(rows, target)
 
     def export_pdf(self, target: Path, start: date, end: date) -> Path:
