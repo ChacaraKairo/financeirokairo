@@ -1,7 +1,7 @@
 from pathlib import Path
 
 project_root = Path(SPECPATH).parent
-entrypoint = project_root / "src/financeiro_kairo/presentation/app.py"
+entrypoint = project_root / "src/financeiro_kairo/presentation/main.py"
 source_root = project_root / "src"
 
 analysis = Analysis(
@@ -12,6 +12,7 @@ analysis = Analysis(
     hiddenimports=[
         "financeiro_kairo.domain.models",
         "financeiro_kairo.domain.planning_models",
+        "financeiro_kairo.domain.recurring_expenses",
         "pandas",
         "openpyxl",
         "reportlab",

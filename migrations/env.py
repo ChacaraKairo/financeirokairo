@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from financeiro_kairo.config import settings
-from financeiro_kairo.domain import models, planning_models  # noqa: F401
+from financeiro_kairo.domain import models, planning_models, recurring_expenses  # noqa: F401
 from financeiro_kairo.infrastructure.database.base import Base
 
 config = context.config
