@@ -82,9 +82,12 @@ class FinanceService:
             if row.transfer_group is None:
                 continue
             pair = self.session.scalars(
-                select(Transaction).where(Transaction.transfer_group == row.transfer_group)
+                select(Transaction)
+                .where(Transaction.transfer_group == row.transfer_group)
+                .order_by(Transaction.id)
             ).all()
-            if len(pair) == 2 and pair[0].id != pair[1].id:
+            if len(pair) == 2:
+                # O serviço sempre persiste a saída antes da entrada.
                 transfer_delta += -row.amount_cents if pair[0].id == row.id else row.amount_cents
 
         return account.initial_balance_cents + int(income or 0) - int(expense or 0) + transfer_delta
