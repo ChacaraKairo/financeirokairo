@@ -1,0 +1,49 @@
+name: Package Linux
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    tags: ["v*"]
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0
+      - name: Install project
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]' pyinstaller
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest
+      - name: Build executable
+        shell: bash
+        run: |
+          set -o pipefail
+          pyinstaller --clean --noconfirm packaging/financeiro-kairo.spec 2>&1 | tee pyinstaller.log
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyinstaller-log
+          path: pyinstaller.log
+      - name: Smoke test executable
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: timeout 8s dist/financeiro-kairo || test $? -eq 124
+      - name: Archive
+        run: tar -C dist -czf financeiro-kairo-linux-x86_64.tar.gz financeiro-kairo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: financeiro-kairo-linux-x86_64
+          path: financeiro-kairo-linux-x86_64.tar.gz

@@ -9,12 +9,16 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0
       - name: Install
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
       - name: Generate Ruff report
@@ -30,5 +34,12 @@ jobs:
             ruff-fix.diff
       - name: Ruff
         run: ruff check src tests migrations
+      - name: Generate test report
+        run: pytest --cov=financeiro_kairo --cov-report=term-missing -vv > pytest-report.txt 2>&1 || true
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest-report.txt
       - name: Tests
         run: pytest --cov=financeiro_kairo --cov-report=term-missing

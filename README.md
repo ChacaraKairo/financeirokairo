@@ -1,140 +1,131 @@
 # Financeiro Kairo
 
-Sistema desktop de gestão financeira pessoal e familiar, criado para Linux e orientado a funcionamento local e offline. O projeto integra controle financeiro, planejamento doméstico, registro detalhado de compras, catálogo de produtos, comparação de preços e importações auditáveis.
+Aplicação desktop local e offline para gestão financeira pessoal e familiar em Linux. O sistema reúne contas, transações, categorias, compras detalhadas, catálogo de produtos, comparação de preços, planejamento, relatórios e backup em uma única base SQLite controlada pelo usuário.
 
-> **Status:** especificação e planejamento técnico do MVP.
+> **Status:** MVP executável. A qualidade e o pacote Linux são validados pelo GitHub Actions.
 
-## Visão do produto
+## Recursos disponíveis
 
-O Financeiro Kairo pretende substituir planilhas dispersas por uma aplicação única, simples de usar e robusta internamente. Os dados permanecem sob controle do usuário, as automações são revisáveis e nenhuma decisão de categorização ou reconhecimento deve ocorrer de forma invisível.
+- contas e saldos consolidados;
+- receitas, despesas e transferências;
+- categorias e subcategorias protegidas contra ciclos;
+- compras detalhadas e importação JSON auditável;
+- detecção de importações duplicadas;
+- produtos, marcas, variantes, aliases e preços normalizados;
+- orçamento mensal, metas e contribuições;
+- parcelamentos e baixa de parcelas;
+- dashboard e relatórios por período e categoria;
+- exportação para Excel e PDF;
+- backup, validação, rotação e restauração segura;
+- interface PySide6 sem SQL direto nos widgets;
+- executável Linux gerado com PyInstaller.
 
-### Objetivos principais
+## Requisitos
 
-- Registrar receitas, despesas, transferências, compras e pagamentos.
-- Organizar gastos por categorias, subcategorias, etiquetas e períodos.
-- Planejar orçamentos, metas, recorrências e parcelamentos.
-- Importar compras detalhadas com validação, pré-visualização e detecção de duplicidade.
-- Reconhecer produtos já cadastrados e aprender com confirmações do usuário.
-- Separar produto-base, marca, variante, embalagem, quantidade e unidade.
-- Comparar preços totais e normalizados por unidade de medida.
-- Gerar dashboards, relatórios e exportações.
-- Executar localmente, com backup, restauração e trilha de auditoria.
+- Python 3.12 ou superior;
+- Linux desktop;
+- bibliotecas gráficas Qt disponíveis no sistema.
 
-## Diferencial do projeto
+No Kubuntu/Ubuntu:
 
-O sistema não trata `Arroz Camil Tipo 1 5 kg` como um texto único. A modelagem separa:
+```bash
+sudo apt update
+sudo apt install -y python3.12-venv libegl1 libgl1 libxkbcommon-x11-0
+```
 
-- **Produto-base:** Arroz
-- **Marca:** Camil
-- **Variante:** Tipo 1
-- **Quantidade:** 5
-- **Unidade:** kg
-- **Embalagem:** pacote
-- **Categoria:** Alimentação / Mercearia
+## Instalação para desenvolvimento
 
-Essa separação permite comparar produtos equivalentes entre marcas, estabelecimentos, tamanhos de embalagem e períodos diferentes usando preço por quilograma, litro, unidade ou outra unidade-base.
+```bash
+git clone https://github.com/ChacaraKairo/financeirokairo.git
+cd financeirokairo
 
-## Escopo do MVP
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
 
-O MVP contempla:
+financeiro-kairo migrate
+financeiro-kairo-desktop
+```
 
-1. contas e formas de pagamento;
-2. receitas, despesas e transferências;
-3. categorias, etiquetas e filtros;
-4. compras detalhadas por item;
-5. catálogo de produtos, marcas e variantes;
-6. importação estruturada por JSON;
-7. reconhecimento de produtos e categorização assistida;
-8. histórico e comparação de preços;
-9. orçamentos e metas básicas;
-10. relatórios essenciais;
-11. backup, restauração e auditoria.
+Os dados ficam, por padrão, em:
 
-Ficam fora do MVP: sincronização em nuvem, aplicativo móvel, integração bancária automática, OCR de notas fiscais e serviços externos de inteligência artificial.
+```text
+~/.local/share/financeiro-kairo/
+```
 
-## Arquitetura e stack
+É possível mudar o diretório com:
 
-- Python 3.12+
-- PySide6 / Qt 6
-- SQLite em modo WAL
-- SQLAlchemy 2
-- Alembic
-- Pydantic
-- RapidFuzz
-- pandas
-- PyQtGraph
-- ReportLab
-- openpyxl
-- pytest
+```bash
+export FINANCEIRO_KAIRO_DATA_DIR=/caminho/desejado
+```
 
-A aplicação segue uma arquitetura modular em camadas:
+## Comandos administrativos
+
+```bash
+financeiro-kairo migrate
+financeiro-kairo init-db
+financeiro-kairo backup
+financeiro-kairo validate-backup /caminho/backup.sqlite3
+financeiro-kairo restore /caminho/backup.sqlite3
+financeiro-kairo rotate-backups --keep 30
+```
+
+## Executável Linux
+
+A pipeline `Package Linux` gera o artefato:
+
+```text
+financeiro-kairo-linux-x86_64.tar.gz
+```
+
+Após extrair:
+
+```bash
+chmod +x financeiro-kairo
+./financeiro-kairo
+```
+
+O lançador `packaging/financeiro-kairo.desktop` pode ser copiado para `~/.local/share/applications/`.
+
+## Importação de compras
+
+Use a tela **Compras e importações** para selecionar um JSON. O arquivo é validado antes da gravação e o hash impede importação duplicada. Um exemplo está em [`examples/compra-exemplo.json`](examples/compra-exemplo.json).
+
+## Arquitetura
 
 ```text
 Presentation (PySide6)
         ↓
-Application (casos de uso)
+ApplicationFacade e serviços
         ↓
-Domain (entidades e regras)
+Domain
         ↓
-Infrastructure (SQLite, arquivos, relatórios e backup)
+SQLAlchemy / SQLite / arquivos
 ```
 
-## Princípios técnicos
+Princípios:
 
-- Valores monetários usam centavos inteiros ou `Decimal` com escala explícita.
-- Quantidades físicas usam `Decimal`.
-- Widgets não executam SQL diretamente.
-- Migrações de banco passam pelo Alembic.
-- Importações são transacionais e auditáveis.
-- Operações pesadas não bloqueiam a interface.
-- Toda sugestão automática deve poder ser revisada e corrigida.
-- Dados locais devem ser recuperáveis por backup validado.
+- valores monetários em centavos inteiros;
+- quantidades físicas com `Decimal`;
+- widgets não executam SQL;
+- migrações versionadas com Alembic;
+- importações e transferências transacionais;
+- dados recuperáveis por backup validado.
+
+## Testes
+
+```bash
+ruff check src tests migrations
+QT_QPA_PLATFORM=offscreen pytest
+```
+
+A CI executa instalação, lint, testes unitários, integração, smoke test da interface e build do executável.
 
 ## Documentação
 
-Comece pelo [índice da documentação](docs/00-indice.md).
-
-### Produto e requisitos
-
-- [Visão geral](docs/01-visao-geral.md)
-- [Requisitos funcionais](docs/02-requisitos-funcionais.md)
-- [Requisitos não funcionais](docs/11-requisitos-nao-funcionais.md)
-- [Critérios de aceite do MVP](docs/14-criterios-aceitacao-mvp.md)
-
-### Arquitetura e dados
-
-- [Arquitetura técnica](docs/03-arquitetura.md)
-- [Modelo de dados](docs/04-modelo-de-dados.md)
-- [Decisões arquiteturais](docs/13-decisoes-arquiteturais.md)
-
-### Funcionalidades especializadas
-
-- [Importação JSON](docs/05-importacao-json.md)
-- [Categorização e aprendizado](docs/06-categorizacao-e-aprendizado.md)
-- [Interface e experiência de uso](docs/07-interface-ux.md)
-- [Relatórios e análises](docs/08-relatorios-e-analises.md)
-- [Segurança e backup](docs/09-seguranca-e-backup.md)
-
-### Execução do projeto
-
-- [Roadmap](docs/10-roadmap.md)
-- [Guia de desenvolvimento](docs/12-guia-desenvolvimento.md)
-
-## Exemplo de importação
-
-Consulte [`examples/compra-exemplo.json`](examples/compra-exemplo.json).
-
-## Definição de pronto
-
-Uma funcionalidade é considerada pronta quando:
-
-- atende aos critérios de aceite documentados;
-- possui validações e mensagens de erro adequadas;
-- respeita as fronteiras arquiteturais;
-- possui testes automatizados proporcionais ao risco;
-- não compromete integridade, backup ou restauração;
-- tem sua documentação atualizada.
+Comece pelo [índice da documentação](docs/00-indice.md). Os critérios verificáveis do MVP estão em [Critérios de aceite](docs/14-criterios-aceitacao-mvp.md).
 
 ## Licença
 
-A licença do projeto ainda deve ser definida antes da primeira distribuição pública.
+Distribuído sob a licença MIT. Consulte [`LICENSE`](LICENSE).

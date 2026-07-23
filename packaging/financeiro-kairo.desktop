@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Financeiro Kairo
+Comment=Gestão financeira pessoal e análise de compras
+Exec=financeiro-kairo
+Terminal=false
+Categories=Office;Finance;
+StartupNotify=true

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -26,8 +27,35 @@ class BackupService:
                     raise RuntimeError("backup integrity check failed")
         return target
 
+    def restore_backup(self, source: Path) -> Path:
+        source = source.expanduser().resolve()
+        if not self.validate_backup(source):
+            raise ValueError("backup file is invalid or corrupted")
+        self.config.ensure_directories()
+        safety_copy = self.create_backup(self.config.resolved_backup_dir / "before-restore")
+        temporary = self.config.database_path.with_suffix(".restore.tmp")
+        shutil.copy2(source, temporary)
+        if not self.validate_backup(temporary):
+            temporary.unlink(missing_ok=True)
+            raise RuntimeError("restored copy failed integrity validation")
+        temporary.replace(self.config.database_path)
+        return safety_copy
+
+    def rotate(self, *, keep: int = 30) -> list[Path]:
+        if keep < 1:
+            raise ValueError("keep must be at least one")
+        directory = self.config.resolved_backup_dir
+        directory.mkdir(parents=True, exist_ok=True)
+        files = sorted(directory.glob("financeiro-kairo-*.sqlite3"), key=lambda item: item.stat().st_mtime, reverse=True)
+        removed: list[Path] = []
+        for path in files[keep:]:
+            path.unlink(missing_ok=True)
+            removed.append(path)
+        return removed
+
     @staticmethod
     def validate_backup(path: Path) -> bool:
+        path = Path(path)
         if not path.is_file():
             return False
         try:
