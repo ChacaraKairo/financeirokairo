@@ -4,11 +4,14 @@ from decimal import Decimal
 import pytest
 
 from financeiro_kairo.application.services.catalog import (
-    normalize_text,
     PriceNormalizationService,
     ProductMatcherService,
+    normalize_text,
 )
-from financeiro_kairo.application.services.imports import DuplicateImportError, PurchaseImportService
+from financeiro_kairo.application.services.imports import (
+    DuplicateImportError,
+    PurchaseImportService,
+)
 from financeiro_kairo.domain.models import Brand, Product, ProductAlias, ProductVariant
 
 
