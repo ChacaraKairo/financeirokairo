@@ -17,7 +17,14 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install --upgrade pip && pip install -e '.[dev]'
+      - name: Generate Ruff report
+        run: ruff check src tests migrations --output-format=concise > ruff-report.txt || true
+      - name: Upload Ruff report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-report
+          path: ruff-report.txt
       - name: Ruff
-        run: ruff check src tests
+        run: ruff check src tests migrations
       - name: Tests
         run: pytest --cov=financeiro_kairo --cov-report=term-missing
