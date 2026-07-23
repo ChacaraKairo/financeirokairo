@@ -26,15 +26,17 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: pytest
-      - name: Generate build log
-        run: pyinstaller --clean --noconfirm packaging/financeiro-kairo.spec > pyinstaller.log 2>&1 || true
+      - name: Build executable
+        shell: bash
+        run: |
+          set -o pipefail
+          pyinstaller --clean --noconfirm packaging/financeiro-kairo.spec 2>&1 | tee pyinstaller.log
       - name: Upload build log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pyinstaller-log
           path: pyinstaller.log
-      - name: Build executable
-        run: pyinstaller --clean --noconfirm packaging/financeiro-kairo.spec
       - name: Smoke test executable
         env:
           QT_QPA_PLATFORM: offscreen
