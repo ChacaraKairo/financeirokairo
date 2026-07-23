@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
@@ -35,7 +36,7 @@ def main() -> None:
         print(f"Backup criado: {path}")
         return
     if args.command == "validate-backup":
-        valid = BackupService.validate_backup(args.path)
+        valid = BackupService.validate_backup(Path(args.path))
         print("Backup válido." if valid else "Backup inválido.")
         raise SystemExit(0 if valid else 1)
     raise SystemExit(2)
