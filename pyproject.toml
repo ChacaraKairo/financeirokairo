@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "financeiro-kairo"
-version = "1.1.0"
+version = "1.2.0"
 description = "Aplicação desktop local de gestão financeira pessoal"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -30,7 +30,7 @@ dev = [
 
 [project.scripts]
 financeiro-kairo = "financeiro_kairo.cli:main"
-financeiro-kairo-desktop = "financeiro_kairo.presentation.app:main"
+financeiro-kairo-desktop = "financeiro_kairo.presentation.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/financeiro_kairo"]
