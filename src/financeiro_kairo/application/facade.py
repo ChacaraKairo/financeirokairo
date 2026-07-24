@@ -9,14 +9,16 @@ from sqlalchemy import select
 
 from financeiro_kairo.application.schemas import AccountCreate, TransactionCreate
 from financeiro_kairo.application.services.backup import BackupService
+from financeiro_kairo.application.services.catalog import normalize_text
 from financeiro_kairo.application.services.categories import CategoryService
 from financeiro_kairo.application.services.finance import FinanceService
 from financeiro_kairo.application.services.imports import PurchaseImportService
 from financeiro_kairo.application.services.planning import PlanningService
 from financeiro_kairo.application.services.recurring_expenses import RecurringExpenseService
 from financeiro_kairo.application.services.reports import ReportService
-from financeiro_kairo.domain.models import Account, Category, Purchase
+from financeiro_kairo.domain.models import Account, Category, Merchant, Purchase, Transaction
 from financeiro_kairo.domain.planning_models import Budget, Goal, Installment, InstallmentPlan
+from financeiro_kairo.domain.recurring_expenses import RecurringExpense
 from financeiro_kairo.infrastructure.database.session import session_scope
 
 
@@ -31,6 +33,7 @@ class ApplicationFacade:
                     "name": item.name,
                     "type": item.account_type,
                     "active": item.active,
+                    "initial_balance_cents": item.initial_balance_cents,
                     "balance_cents": service.account_balance_cents(item.id),
                 }
                 for item in rows
@@ -46,6 +49,29 @@ class ApplicationFacade:
                 )
             )
             return item.id
+
+    def update_account(
+        self,
+        account_id: int,
+        *,
+        name: str,
+        account_type: str,
+        initial_balance_cents: int,
+        active: bool = True,
+    ) -> None:
+        with session_scope() as session:
+            item = self._require(session, Account, account_id)
+            clean_name = name.strip()
+            if len(clean_name) < 2:
+                raise ValueError("Informe um nome com pelo menos dois caracteres.")
+            item.name = clean_name
+            item.account_type = account_type
+            item.initial_balance_cents = initial_balance_cents
+            item.active = active
+
+    def delete_account(self, account_id: int) -> None:
+        with session_scope() as session:
+            session.delete(self._require(session, Account, account_id))
 
     def transactions(
         self,
@@ -108,6 +134,39 @@ class ApplicationFacade:
             )
             return item.id
 
+    def update_transaction(
+        self,
+        transaction_id: int,
+        *,
+        transaction_type: str,
+        description: str,
+        amount_cents: int,
+        occurred_on: date,
+        account_id: int,
+        category_id: int | None = None,
+    ) -> None:
+        data = TransactionCreate(
+            transaction_type=transaction_type,
+            description=description,
+            amount_cents=amount_cents,
+            occurred_on=occurred_on,
+            account_id=account_id,
+            category_id=category_id,
+        )
+        with session_scope() as session:
+            FinanceService(session)._require_account(data.account_id)
+            item = self._require(session, Transaction, transaction_id)
+            item.transaction_type = data.transaction_type
+            item.description = data.description
+            item.amount_cents = data.amount_cents
+            item.occurred_on = data.occurred_on
+            item.account_id = data.account_id
+            item.category_id = data.category_id
+
+    def delete_transaction(self, transaction_id: int) -> None:
+        with session_scope() as session:
+            session.delete(self._require(session, Transaction, transaction_id))
+
     def categories(self, *, include_inactive: bool = False) -> list[dict[str, Any]]:
         with session_scope() as session:
             rows = CategoryService(session).list(include_inactive=include_inactive)
@@ -127,9 +186,27 @@ class ApplicationFacade:
             item = CategoryService(session).create(name=name, kind=kind, parent_id=parent_id)
             return item.id
 
+    def update_category(
+        self,
+        category_id: int,
+        *,
+        name: str,
+        kind: str,
+        parent_id: int | None = None,
+        active: bool = True,
+    ) -> None:
+        with session_scope() as session:
+            service = CategoryService(session)
+            item = service.update(category_id, name=name, kind=kind, parent_id=parent_id)
+            item.active = active
+
     def archive_category(self, category_id: int) -> None:
         with session_scope() as session:
             CategoryService(session).archive(category_id)
+
+    def delete_category(self, category_id: int) -> None:
+        with session_scope() as session:
+            session.delete(self._require(session, Category, category_id))
 
     def purchases(self) -> list[dict[str, Any]]:
         with session_scope() as session:
@@ -141,9 +218,11 @@ class ApplicationFacade:
                     "id": row.id,
                     "date": row.purchased_on,
                     "merchant": row.merchant.name,
+                    "account_id": row.account_id,
                     "items": len(row.items),
                     "total_cents": row.net_total_cents,
                     "source": row.source_type,
+                    "document_number": row.document_number,
                 }
                 for row in rows
             ]
@@ -153,6 +232,45 @@ class ApplicationFacade:
         with session_scope() as session:
             purchase = PurchaseImportService(session).import_payload(payload, path.name)
             return purchase.id
+
+    def update_purchase(
+        self,
+        purchase_id: int,
+        *,
+        purchased_on: date,
+        merchant_name: str,
+        account_id: int | None,
+        total_cents: int,
+        source_type: str,
+        document_number: str | None = None,
+    ) -> None:
+        clean_merchant = merchant_name.strip()
+        if len(clean_merchant) < 2:
+            raise ValueError("Informe o estabelecimento.")
+        if total_cents < 0:
+            raise ValueError("O total não pode ser negativo.")
+        with session_scope() as session:
+            if account_id is not None:
+                FinanceService(session)._require_account(account_id)
+            purchase = self._require(session, Purchase, purchase_id)
+            normalized = normalize_text(clean_merchant)
+            merchant = session.scalar(select(Merchant).where(Merchant.normalized_name == normalized))
+            if merchant is None:
+                merchant = Merchant(name=clean_merchant, normalized_name=normalized)
+                session.add(merchant)
+                session.flush()
+            purchase.purchased_on = purchased_on
+            purchase.merchant_id = merchant.id
+            purchase.account_id = account_id
+            purchase.gross_total_cents = total_cents
+            purchase.net_total_cents = total_cents
+            purchase.discount_cents = 0
+            purchase.source_type = source_type.strip() or "manual"
+            purchase.document_number = document_number.strip() if document_number else None
+
+    def delete_purchase(self, purchase_id: int) -> None:
+        with session_scope() as session:
+            session.delete(self._require(session, Purchase, purchase_id))
 
     def budgets(self) -> list[dict[str, Any]]:
         with session_scope() as session:
@@ -170,6 +288,7 @@ class ApplicationFacade:
                     "end": row.period_end,
                     "limit_cents": row.limit_cents,
                     "used_cents": service.budget_usage_cents(row.id),
+                    "active": row.active,
                 }
                 for row in rows
             ]
@@ -193,6 +312,34 @@ class ApplicationFacade:
             )
             return item.id
 
+    def update_budget(
+        self,
+        budget_id: int,
+        *,
+        name: str,
+        period_start: date,
+        period_end: date,
+        limit_cents: int,
+        active: bool = True,
+    ) -> None:
+        if len(name.strip()) < 2:
+            raise ValueError("Informe um nome para o orçamento.")
+        if limit_cents < 0:
+            raise ValueError("O limite não pode ser negativo.")
+        if period_end < period_start:
+            raise ValueError("A data final deve ser maior ou igual à inicial.")
+        with session_scope() as session:
+            item = self._require(session, Budget, budget_id)
+            item.name = name.strip()
+            item.period_start = period_start
+            item.period_end = period_end
+            item.limit_cents = limit_cents
+            item.active = active
+
+    def delete_budget(self, budget_id: int) -> None:
+        with session_scope() as session:
+            session.delete(self._require(session, Budget, budget_id))
+
     def goals(self) -> list[dict[str, Any]]:
         with session_scope() as session:
             rows = session.scalars(
@@ -205,6 +352,7 @@ class ApplicationFacade:
                     "target_cents": row.target_cents,
                     "current_cents": row.current_cents,
                     "target_date": row.target_date,
+                    "active": row.active,
                 }
                 for row in rows
             ]
@@ -217,6 +365,30 @@ class ApplicationFacade:
                 target_date=target_date,
             )
             return item.id
+
+    def update_goal(
+        self,
+        goal_id: int,
+        *,
+        name: str,
+        target_cents: int,
+        current_cents: int,
+        active: bool = True,
+    ) -> None:
+        if len(name.strip()) < 2:
+            raise ValueError("Informe um nome para a meta.")
+        if target_cents <= 0 or current_cents < 0:
+            raise ValueError("Valores da meta inválidos.")
+        with session_scope() as session:
+            item = self._require(session, Goal, goal_id)
+            item.name = name.strip()
+            item.target_cents = target_cents
+            item.current_cents = current_cents
+            item.active = active
+
+    def delete_goal(self, goal_id: int) -> None:
+        with session_scope() as session:
+            session.delete(self._require(session, Goal, goal_id))
 
     def contribute_goal(self, goal_id: int, amount_cents: int, contributed_on: date) -> None:
         with session_scope() as session:
@@ -232,6 +404,7 @@ class ApplicationFacade:
             return [
                 {
                     "id": installment.id,
+                    "plan_id": plan.id,
                     "description": plan.description,
                     "number": installment.number,
                     "count": plan.installment_count,
@@ -262,6 +435,29 @@ class ApplicationFacade:
                 category_id=category_id,
             )
             return item.id
+
+    def update_installment(
+        self,
+        installment_id: int,
+        *,
+        due_date: date,
+        amount_cents: int,
+    ) -> None:
+        if amount_cents <= 0:
+            raise ValueError("O valor da parcela deve ser positivo.")
+        with session_scope() as session:
+            item = self._require(session, Installment, installment_id)
+            if item.paid:
+                raise ValueError("Não é possível editar uma parcela já paga.")
+            item.due_date = due_date
+            item.amount_cents = amount_cents
+
+    def delete_installment_plan(self, plan_id: int) -> None:
+        with session_scope() as session:
+            plan = self._require(session, InstallmentPlan, plan_id)
+            if any(installment.paid for installment in plan.installments):
+                raise ValueError("Não é possível apagar um parcelamento com parcelas pagas.")
+            session.delete(plan)
 
     def pay_installment(self, installment_id: int, paid_on: date) -> None:
         with session_scope() as session:
@@ -336,6 +532,14 @@ class ApplicationFacade:
                 active=active,
             )
 
+    def delete_recurring_expense(self, expense_id: int) -> None:
+        with session_scope() as session:
+            item = self._require(session, RecurringExpense, expense_id)
+            paid_occurrences = [occurrence for occurrence in item.occurrences if occurrence.paid]
+            if paid_occurrences:
+                raise ValueError("Não é possível apagar uma despesa recorrente com ocorrências pagas.")
+            session.delete(item)
+
     def recurring_expense_month(self, reference: date) -> list[dict[str, Any]]:
         with session_scope() as session:
             service = RecurringExpenseService(session)
@@ -388,6 +592,7 @@ class ApplicationFacade:
             reports = ReportService(session)
             summary = reports.summary(start, end)
             categories = reports.expenses_by_category(start, end)
+            invoice_totals, invoice_transactions = reports.credit_card_invoice(start, end)
             balances = sum(item["balance_cents"] for item in self.accounts())
             return {
                 "income_cents": summary.income_cents,
@@ -395,6 +600,27 @@ class ApplicationFacade:
                 "net_cents": summary.net_cents,
                 "balance_cents": balances,
                 "categories": [(item.category_name, item.amount_cents) for item in categories],
+                "credit_card_invoice": {
+                    "total_cents": sum(item.amount_cents for item in invoice_totals),
+                    "cards": [
+                        {
+                            "account_id": item.account_id,
+                            "account_name": item.account_name,
+                            "amount_cents": item.amount_cents,
+                        }
+                        for item in invoice_totals
+                    ],
+                    "transactions": [
+                        {
+                            "account_id": item.account_id,
+                            "account_name": item.account_name,
+                            "date": item.occurred_on,
+                            "description": item.description,
+                            "amount_cents": item.amount_cents,
+                        }
+                        for item in invoice_transactions
+                    ],
+                },
             }
 
     def export_excel(self, target: Path, start: date, end: date) -> Path:
@@ -417,3 +643,10 @@ class ApplicationFacade:
 
     def restore_backup(self, path: Path) -> Path:
         return BackupService().restore_backup(path)
+
+    @staticmethod
+    def _require(session: Any, model: type, object_id: int) -> Any:
+        item = session.get(model, object_id)
+        if item is None:
+            raise LookupError(f"{model.__name__} {object_id} não encontrado.")
+        return item

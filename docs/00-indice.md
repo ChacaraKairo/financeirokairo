@@ -5,28 +5,36 @@ Este diretório reúne as especificações de produto, arquitetura, dados, exper
 ## Ordem recomendada de leitura
 
 1. [Visão geral](01-visao-geral.md)
-2. [Requisitos funcionais](02-requisitos-funcionais.md)
-3. [Requisitos não funcionais](11-requisitos-nao-funcionais.md)
-4. [Arquitetura técnica](03-arquitetura.md)
-5. [Modelo de dados](04-modelo-de-dados.md)
-6. [Interface e experiência de uso](07-interface-ux.md)
-7. [Importação JSON](05-importacao-json.md)
-8. [Categorização e aprendizado](06-categorizacao-e-aprendizado.md)
-9. [Relatórios e análises](08-relatorios-e-analises.md)
-10. [Segurança e backup](09-seguranca-e-backup.md)
-11. [Decisões arquiteturais](13-decisoes-arquiteturais.md)
-12. [Critérios de aceite do MVP](14-criterios-aceitacao-mvp.md)
-13. [Roadmap](10-roadmap.md)
-14. [Guia de desenvolvimento](12-guia-desenvolvimento.md)
+2. [Manual completo do usuário](16-manual-do-usuario.md)
+3. [Requisitos funcionais](02-requisitos-funcionais.md)
+4. [Requisitos não funcionais](11-requisitos-nao-funcionais.md)
+5. [Arquitetura técnica](03-arquitetura.md)
+6. [Modelo de dados](04-modelo-de-dados.md)
+7. [Interface e experiência de uso](07-interface-ux.md)
+8. [Importação JSON](05-importacao-json.md)
+9. [Categorização e aprendizado](06-categorizacao-e-aprendizado.md)
+10. [Relatórios e análises](08-relatorios-e-analises.md)
+11. [Segurança e backup](09-seguranca-e-backup.md)
+12. [Decisões arquiteturais](13-decisoes-arquiteturais.md)
+13. [Critérios de aceite do MVP](14-criterios-aceitacao-mvp.md)
+14. [Roadmap](10-roadmap.md)
+15. [Guia de desenvolvimento](12-guia-desenvolvimento.md)
 
 ## Mapa por objetivo
 
 ### Entender o produto
 
 - `01-visao-geral.md`
+- `16-manual-do-usuario.md`
 - `02-requisitos-funcionais.md`
 - `11-requisitos-nao-funcionais.md`
 - `14-criterios-aceitacao-mvp.md`
+
+### Usar o aplicativo
+
+- `16-manual-do-usuario.md`
+- `15-execucao-e-desenvolvimento.md`
+- `09-seguranca-e-backup.md`
 
 ### Implementar o sistema
 

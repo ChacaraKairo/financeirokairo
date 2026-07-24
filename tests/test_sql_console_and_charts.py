@@ -8,7 +8,12 @@ from sqlalchemy import create_engine
 
 from financeiro_kairo.application.services import sql_console
 from financeiro_kairo.application.services.sql_console import SqlConsoleService
-from financeiro_kairo.presentation.app import ChartsPage, SqlConsolePage, translate
+from financeiro_kairo.presentation.app import (
+    ChartsPage,
+    DatabaseBrowserPage,
+    SqlConsolePage,
+    translate,
+)
 
 
 class FakeFacade:
@@ -39,6 +44,35 @@ def test_sql_console_read_only_and_write_protection(monkeypatch):
     assert service.execute("SELECT id FROM teste").rows == [[7]]
 
 
+def test_database_browser_lists_and_reads_tables(monkeypatch):
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    monkeypatch.setattr(sql_console, "engine", engine)
+    service = SqlConsoleService()
+    service.execute("CREATE TABLE contas (id INTEGER, nome TEXT)", allow_writes=True)
+    service.execute("INSERT INTO contas (id, nome) VALUES (1, 'Carteira')", allow_writes=True)
+
+    tables = service.tables()
+    assert tables == [
+        sql_console.DatabaseTable(
+            name="contas",
+            row_count=1,
+            description="Tabela do banco de dados local sem descrição cadastrada no aplicativo.",
+        )
+    ]
+    assert "Lançamentos financeiros" in service.table_description("transactions")
+
+    data = service.table_data("contas")
+    assert data.columns == ["id", "nome"]
+    assert data.rows == [[1, "Carteira"]]
+    assert data.total_rows == 1
+
+    schema = service.schema_sql()
+    assert 'CREATE TABLE "contas" (' in schema
+    assert '    "id" INTEGER' in schema
+    assert '    "nome" TEXT' in schema
+    assert "Carteira" not in schema
+
+
 def test_portuguese_translation_and_graph_types(qapp):
     assert translate("credit_card") == "Cartão de crédito"
     assert translate("expense") == "Despesa"
@@ -51,6 +85,9 @@ def test_portuguese_translation_and_graph_types(qapp):
 
     sql_page = SqlConsolePage()
     assert sql_page.allow_writes.text() == "Permitir comandos que alteram dados"
+
+    database_page = DatabaseBrowserPage()
+    assert database_page.limit.value() == 500
 
 
 @pytest.fixture(scope="session")

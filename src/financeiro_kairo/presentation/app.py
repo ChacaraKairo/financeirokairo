@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -107,10 +108,27 @@ class FormDialog(QDialog):
         self.form.addRow(self.buttons)
 
 
+def select_combo_value(combo: QComboBox, value: object) -> None:
+    index = combo.findData(value)
+    if index >= 0:
+        combo.setCurrentIndex(index)
+
+
+def confirm_delete(parent: QWidget, title: str, message: str) -> bool:
+    answer = QMessageBox.question(parent, title, message, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+    return answer == QMessageBox.Yes
+
+
 class TransactionDialog(FormDialog):
-    def __init__(self, facade: ApplicationFacade, parent: QWidget | None = None) -> None:
-        super().__init__("Nova transação", parent)
+    def __init__(
+        self,
+        facade: ApplicationFacade,
+        item: dict[str, Any] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__("Editar transação" if item else "Nova transação", parent)
         self.facade = facade
+        self.item = item
         self.description = QLineEdit()
         self.amount = QDoubleSpinBox()
         self.amount.setRange(0.01, 10_000_000)
@@ -120,13 +138,13 @@ class TransactionDialog(FormDialog):
         self.kind.addItem("Despesa", TransactionType.EXPENSE.value)
         self.kind.addItem("Receita", TransactionType.INCOME.value)
         self.account = QComboBox()
-        for item in facade.accounts():
-            if item["active"]:
-                self.account.addItem(item["name"], item["id"])
+        for account in facade.accounts():
+            if account["active"]:
+                self.account.addItem(account["name"], account["id"])
         self.category = QComboBox()
         self.category.addItem("Sem categoria", None)
-        for item in facade.categories():
-            self.category.addItem(item["name"], item["id"])
+        for category in facade.categories():
+            self.category.addItem(category["name"], category["id"])
         self.occurred_on = QDateEdit(QDate.currentDate())
         self.occurred_on.setCalendarPopup(True)
         self.form.addRow("Descrição", self.description)
@@ -136,76 +154,175 @@ class TransactionDialog(FormDialog):
         self.form.addRow("Categoria", self.category)
         self.form.addRow("Data", self.occurred_on)
         self.finish()
+        if item:
+            self.description.setText(item["description"])
+            self.amount.setValue(item["amount_cents"] / 100)
+            select_combo_value(self.kind, item["type"])
+            select_combo_value(self.account, item["account_id"])
+            select_combo_value(self.category, item["category_id"])
+            self.occurred_on.setDate(QDate(item["date"].year, item["date"].month, item["date"].day))
 
     def accept(self) -> None:
         if len(self.description.text().strip()) < 2 or self.account.currentData() is None:
             QMessageBox.warning(self, "Dados inválidos", "Informe uma descrição e uma conta válida.")
             return
-        self.facade.create_transaction(
-            transaction_type=str(self.kind.currentData()),
-            description=self.description.text().strip(),
-            amount_cents=round(self.amount.value() * 100),
-            occurred_on=self.occurred_on.date().toPython(),
-            account_id=int(self.account.currentData()),
-            category_id=self.category.currentData(),
-        )
+        payload = {
+            "transaction_type": str(self.kind.currentData()),
+            "description": self.description.text().strip(),
+            "amount_cents": round(self.amount.value() * 100),
+            "occurred_on": self.occurred_on.date().toPython(),
+            "account_id": int(self.account.currentData()),
+            "category_id": self.category.currentData(),
+        }
+        if self.item:
+            self.facade.update_transaction(self.item["id"], **payload)
+        else:
+            self.facade.create_transaction(**payload)
         super().accept()
 
 
 class AccountDialog(FormDialog):
-    def __init__(self, facade: ApplicationFacade, parent: QWidget | None = None) -> None:
-        super().__init__("Nova conta", parent)
+    def __init__(
+        self,
+        facade: ApplicationFacade,
+        item: dict[str, Any] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__("Editar conta" if item else "Nova conta", parent)
         self.facade = facade
+        self.item = item
         self.name = QLineEdit()
         self.kind = QComboBox()
-        for item in AccountType:
-            self.kind.addItem(translate(item.value), item.value)
+        for account_type in AccountType:
+            self.kind.addItem(translate(account_type.value), account_type.value)
         self.balance = QDoubleSpinBox()
         self.balance.setRange(-10_000_000, 10_000_000)
         self.balance.setPrefix("R$ ")
+        self.active = QCheckBox("Conta ativa")
+        self.active.setChecked(True)
         self.form.addRow("Nome", self.name)
         self.form.addRow("Tipo", self.kind)
         self.form.addRow("Saldo inicial", self.balance)
+        self.form.addRow("Situação", self.active)
         self.finish()
+        if item:
+            self.name.setText(item["name"])
+            select_combo_value(self.kind, item["type"])
+            self.balance.setValue(item["initial_balance_cents"] / 100)
+            self.active.setChecked(item["active"])
 
     def accept(self) -> None:
         if len(self.name.text().strip()) < 2:
             QMessageBox.warning(self, "Nome inválido", "Informe um nome para a conta.")
             return
-        self.facade.create_account(
-            name=self.name.text().strip(),
-            account_type=str(self.kind.currentData()),
-            initial_balance_cents=round(self.balance.value() * 100),
-        )
+        payload = {
+            "name": self.name.text().strip(),
+            "account_type": str(self.kind.currentData()),
+            "initial_balance_cents": round(self.balance.value() * 100),
+        }
+        if self.item:
+            self.facade.update_account(self.item["id"], **payload, active=self.active.isChecked())
+        else:
+            self.facade.create_account(**payload)
         super().accept()
 
 
 class CategoryDialog(FormDialog):
-    def __init__(self, facade: ApplicationFacade, parent: QWidget | None = None) -> None:
-        super().__init__("Nova categoria", parent)
+    def __init__(
+        self,
+        facade: ApplicationFacade,
+        item: dict[str, Any] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__("Editar categoria" if item else "Nova categoria", parent)
         self.facade = facade
+        self.item = item
         self.name = QLineEdit()
         self.kind = QComboBox()
-        for item in CategoryKind:
-            self.kind.addItem(translate(item.value), item.value)
+        for category_kind in CategoryKind:
+            self.kind.addItem(translate(category_kind.value), category_kind.value)
         self.parent_category = QComboBox()
         self.parent_category.addItem("Nenhuma", None)
-        for item in facade.categories():
-            self.parent_category.addItem(item["name"], item["id"])
+        for category in facade.categories():
+            if self.item is None or category["id"] != self.item["id"]:
+                self.parent_category.addItem(category["name"], category["id"])
+        self.active = QCheckBox("Categoria ativa")
+        self.active.setChecked(True)
         self.form.addRow("Nome", self.name)
         self.form.addRow("Tipo", self.kind)
         self.form.addRow("Categoria superior", self.parent_category)
+        self.form.addRow("Situação", self.active)
+        self.finish()
+        if item:
+            self.name.setText(item["name"])
+            select_combo_value(self.kind, item["kind"])
+            select_combo_value(self.parent_category, item["parent_id"])
+            self.active.setChecked(item["active"])
+
+    def accept(self) -> None:
+        try:
+            payload = {
+                "name": self.name.text(),
+                "kind": str(self.kind.currentData()),
+                "parent_id": self.parent_category.currentData(),
+            }
+            if self.item:
+                self.facade.update_category(self.item["id"], **payload, active=self.active.isChecked())
+            else:
+                self.facade.create_category(**payload)
+        except (ValueError, LookupError) as error:
+            QMessageBox.warning(self, "Categoria inválida", str(error))
+            return
+        super().accept()
+
+
+class PurchaseDialog(FormDialog):
+    def __init__(
+        self,
+        facade: ApplicationFacade,
+        item: dict[str, Any],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__("Editar compra", parent)
+        self.facade = facade
+        self.item = item
+        self.purchased_on = QDateEdit(QDate(item["date"].year, item["date"].month, item["date"].day))
+        self.purchased_on.setCalendarPopup(True)
+        self.merchant = QLineEdit(item["merchant"])
+        self.total = QDoubleSpinBox()
+        self.total.setRange(0, 10_000_000)
+        self.total.setDecimals(2)
+        self.total.setPrefix("R$ ")
+        self.total.setValue(item["total_cents"] / 100)
+        self.source = QLineEdit(str(item["source"]))
+        self.document = QLineEdit(item["document_number"] or "")
+        self.account = QComboBox()
+        self.account.addItem("Sem conta", None)
+        for account in facade.accounts():
+            if account["active"]:
+                self.account.addItem(account["name"], account["id"])
+        select_combo_value(self.account, item["account_id"])
+        self.form.addRow("Data", self.purchased_on)
+        self.form.addRow("Estabelecimento", self.merchant)
+        self.form.addRow("Total", self.total)
+        self.form.addRow("Origem", self.source)
+        self.form.addRow("Documento", self.document)
+        self.form.addRow("Conta", self.account)
         self.finish()
 
     def accept(self) -> None:
         try:
-            self.facade.create_category(
-                name=self.name.text(),
-                kind=str(self.kind.currentData()),
-                parent_id=self.parent_category.currentData(),
+            self.facade.update_purchase(
+                self.item["id"],
+                purchased_on=self.purchased_on.date().toPython(),
+                merchant_name=self.merchant.text(),
+                account_id=self.account.currentData(),
+                total_cents=round(self.total.value() * 100),
+                source_type=self.source.text(),
+                document_number=self.document.text(),
             )
         except (ValueError, LookupError) as error:
-            QMessageBox.warning(self, "Categoria inválida", str(error))
+            QMessageBox.warning(self, "Compra inválida", str(error))
             return
         super().accept()
 
@@ -223,6 +340,16 @@ class DashboardPage(QWidget):
         layout.addWidget(self.summary)
         self.categories = table(["Categoria", "Despesas"])
         layout.addWidget(self.categories)
+        invoice_title = QLabel("Fatura do cartão de crédito")
+        invoice_title.setObjectName("sectionTitle")
+        layout.addWidget(invoice_title)
+        self.invoice_summary = QLabel()
+        self.invoice_summary.setObjectName("summary")
+        layout.addWidget(self.invoice_summary)
+        self.invoice_cards = table(["Cartão", "Total no mês"])
+        layout.addWidget(self.invoice_cards)
+        self.invoice_transactions = table(["Data", "Cartão", "Descrição", "Valor"])
+        layout.addWidget(self.invoice_transactions)
 
     def refresh(self) -> None:
         today = date.today()
@@ -238,12 +365,31 @@ class DashboardPage(QWidget):
         for index, (name, amount) in enumerate(rows):
             self.categories.setItem(index, 0, QTableWidgetItem(name))
             self.categories.setItem(index, 1, QTableWidgetItem(money(amount)))
+        invoice = result.get("credit_card_invoice", {"total_cents": 0, "cards": [], "transactions": []})
+        self.invoice_summary.setText(f"Fatura atual do mês: {money(invoice['total_cents'])}")
+        cards = invoice["cards"]
+        self.invoice_cards.setRowCount(len(cards))
+        for index, item in enumerate(cards):
+            self.invoice_cards.setItem(index, 0, QTableWidgetItem(item["account_name"]))
+            self.invoice_cards.setItem(index, 1, QTableWidgetItem(money(item["amount_cents"])))
+        transactions = invoice["transactions"]
+        self.invoice_transactions.setRowCount(len(transactions))
+        for index, item in enumerate(transactions):
+            values = [
+                item["date"].strftime("%d/%m/%Y"),
+                item["account_name"],
+                item["description"],
+                money(item["amount_cents"]),
+            ]
+            for column, value in enumerate(values):
+                self.invoice_transactions.setItem(index, column, QTableWidgetItem(value))
 
 
 class TransactionsPage(QWidget):
     def __init__(self, facade: ApplicationFacade) -> None:
         super().__init__()
         self.facade = facade
+        self.rows: list[dict[str, Any]] = []
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
         title = QLabel("Transações")
@@ -253,22 +399,50 @@ class TransactionsPage(QWidget):
         self.search.returnPressed.connect(self.refresh)
         add = QPushButton("Nova transação")
         add.clicked.connect(self.create)
+        edit = QPushButton("Editar")
+        edit.clicked.connect(self.edit)
+        delete = QPushButton("Apagar")
+        delete.clicked.connect(self.delete)
         header.addWidget(title)
         header.addStretch()
         header.addWidget(self.search)
         header.addWidget(add)
+        header.addWidget(edit)
+        header.addWidget(delete)
         layout.addLayout(header)
         self.grid = table(["Data", "Descrição", "Tipo", "Valor", "Conta", "Situação"])
         layout.addWidget(self.grid)
 
     def create(self) -> None:
-        if TransactionDialog(self.facade, self).exec():
+        if TransactionDialog(self.facade, parent=self).exec():
             self.refresh()
 
+    def edit(self) -> None:
+        row = self.grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Editar", "Selecione uma transação.")
+            return
+        if TransactionDialog(self.facade, self.rows[row], self).exec():
+            self.refresh()
+
+    def delete(self) -> None:
+        row = self.grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Apagar", "Selecione uma transação.")
+            return
+        if not confirm_delete(self, "Apagar transação", "Deseja apagar a transação selecionada?"):
+            return
+        try:
+            self.facade.delete_transaction(self.rows[row]["id"])
+        except Exception as error:
+            QMessageBox.warning(self, "Não foi possível apagar", str(error))
+            return
+        self.refresh()
+
     def refresh(self) -> None:
-        rows, _ = self.facade.transactions(search_text=self.search.text().strip() or None)
-        self.grid.setRowCount(len(rows))
-        for index, item in enumerate(rows):
+        self.rows, _ = self.facade.transactions(search_text=self.search.text().strip() or None)
+        self.grid.setRowCount(len(self.rows))
+        for index, item in enumerate(self.rows):
             values = [
                 item["date"].strftime("%d/%m/%Y"),
                 item["description"],
@@ -285,27 +459,56 @@ class AccountsPage(QWidget):
     def __init__(self, facade: ApplicationFacade) -> None:
         super().__init__()
         self.facade = facade
+        self.rows: list[dict[str, Any]] = []
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
         title = QLabel("Contas")
         title.setObjectName("pageTitle")
         add = QPushButton("Nova conta")
         add.clicked.connect(self.create)
+        edit = QPushButton("Editar")
+        edit.clicked.connect(self.edit)
+        delete = QPushButton("Apagar")
+        delete.clicked.connect(self.delete)
         header.addWidget(title)
         header.addStretch()
         header.addWidget(add)
+        header.addWidget(edit)
+        header.addWidget(delete)
         layout.addLayout(header)
         self.grid = table(["Conta", "Tipo", "Saldo", "Situação"])
         layout.addWidget(self.grid)
 
     def create(self) -> None:
-        if AccountDialog(self.facade, self).exec():
+        if AccountDialog(self.facade, parent=self).exec():
             self.refresh()
 
+    def edit(self) -> None:
+        row = self.grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Editar", "Selecione uma conta.")
+            return
+        if AccountDialog(self.facade, self.rows[row], self).exec():
+            self.refresh()
+
+    def delete(self) -> None:
+        row = self.grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Apagar", "Selecione uma conta.")
+            return
+        if not confirm_delete(self, "Apagar conta", "Deseja apagar a conta selecionada?"):
+            return
+        try:
+            self.facade.delete_account(self.rows[row]["id"])
+        except Exception as error:
+            QMessageBox.warning(self, "Não foi possível apagar", str(error))
+            return
+        self.refresh()
+
     def refresh(self) -> None:
-        rows = self.facade.accounts()
-        self.grid.setRowCount(len(rows))
-        for index, item in enumerate(rows):
+        self.rows = self.facade.accounts()
+        self.grid.setRowCount(len(self.rows))
+        for index, item in enumerate(self.rows):
             values = [
                 item["name"],
                 translate(item["type"]),
@@ -320,39 +523,66 @@ class CategoriesPage(QWidget):
     def __init__(self, facade: ApplicationFacade) -> None:
         super().__init__()
         self.facade = facade
-        self.ids: list[int] = []
+        self.rows: list[dict[str, Any]] = []
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
         title = QLabel("Categorias")
         title.setObjectName("pageTitle")
         add = QPushButton("Nova categoria")
         add.clicked.connect(self.create)
+        edit = QPushButton("Editar")
+        edit.clicked.connect(self.edit)
         archive = QPushButton("Arquivar selecionada")
         archive.clicked.connect(self.archive)
+        delete = QPushButton("Apagar")
+        delete.clicked.connect(self.delete)
         header.addWidget(title)
         header.addStretch()
         header.addWidget(add)
+        header.addWidget(edit)
         header.addWidget(archive)
+        header.addWidget(delete)
         layout.addLayout(header)
         self.grid = table(["Nome", "Tipo", "Categoria superior", "Situação"])
         layout.addWidget(self.grid)
 
     def create(self) -> None:
-        if CategoryDialog(self.facade, self).exec():
+        if CategoryDialog(self.facade, parent=self).exec():
+            self.refresh()
+
+    def edit(self) -> None:
+        row = self.grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Editar", "Selecione uma categoria.")
+            return
+        if CategoryDialog(self.facade, self.rows[row], self).exec():
             self.refresh()
 
     def archive(self) -> None:
         row = self.grid.currentRow()
         if row >= 0:
-            self.facade.archive_category(self.ids[row])
+            self.facade.archive_category(self.rows[row]["id"])
             self.refresh()
 
+    def delete(self) -> None:
+        row = self.grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Apagar", "Selecione uma categoria.")
+            return
+        if not confirm_delete(self, "Apagar categoria", "Deseja apagar a categoria selecionada?"):
+            return
+        try:
+            self.facade.delete_category(self.rows[row]["id"])
+        except Exception as error:
+            QMessageBox.warning(self, "Não foi possível apagar", str(error))
+            return
+        self.refresh()
+
     def refresh(self) -> None:
-        rows = self.facade.categories(include_inactive=True)
-        names = {item["id"]: item["name"] for item in rows}
-        self.ids = [item["id"] for item in rows]
-        self.grid.setRowCount(len(rows))
-        for index, item in enumerate(rows):
+        self.rows = self.facade.categories(include_inactive=True)
+        names = {item["id"]: item["name"] for item in self.rows}
+        self.grid.setRowCount(len(self.rows))
+        for index, item in enumerate(self.rows):
             values = [
                 item["name"],
                 translate(item["kind"]),
@@ -367,15 +597,22 @@ class PurchasesPage(QWidget):
     def __init__(self, facade: ApplicationFacade) -> None:
         super().__init__()
         self.facade = facade
+        self.rows: list[dict[str, Any]] = []
         layout = QVBoxLayout(self)
         header = QHBoxLayout()
         title = QLabel("Compras e importações")
         title.setObjectName("pageTitle")
         button = QPushButton("Importar arquivo JSON")
         button.clicked.connect(self.import_json)
+        edit = QPushButton("Editar")
+        edit.clicked.connect(self.edit)
+        delete = QPushButton("Apagar")
+        delete.clicked.connect(self.delete)
         header.addWidget(title)
         header.addStretch()
         header.addWidget(button)
+        header.addWidget(edit)
+        header.addWidget(delete)
         layout.addLayout(header)
         layout.addWidget(QLabel("O arquivo é validado e importações repetidas são bloqueadas."))
         self.grid = table(["Data", "Estabelecimento", "Itens", "Total", "Origem"])
@@ -393,10 +630,32 @@ class PurchasesPage(QWidget):
         QMessageBox.information(self, "Importação concluída", f"Compra nº {purchase_id} importada com sucesso.")
         self.refresh()
 
+    def edit(self) -> None:
+        row = self.grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Editar", "Selecione uma compra.")
+            return
+        if PurchaseDialog(self.facade, self.rows[row], self).exec():
+            self.refresh()
+
+    def delete(self) -> None:
+        row = self.grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Apagar", "Selecione uma compra.")
+            return
+        if not confirm_delete(self, "Apagar compra", "Deseja apagar a compra selecionada?"):
+            return
+        try:
+            self.facade.delete_purchase(self.rows[row]["id"])
+        except Exception as error:
+            QMessageBox.warning(self, "Não foi possível apagar", str(error))
+            return
+        self.refresh()
+
     def refresh(self) -> None:
-        rows = self.facade.purchases()
-        self.grid.setRowCount(len(rows))
-        for index, item in enumerate(rows):
+        self.rows = self.facade.purchases()
+        self.grid.setRowCount(len(self.rows))
+        for index, item in enumerate(self.rows):
             values = [
                 item["date"].strftime("%d/%m/%Y"),
                 item["merchant"],
@@ -406,6 +665,90 @@ class PurchasesPage(QWidget):
             ]
             for column, value in enumerate(values):
                 self.grid.setItem(index, column, QTableWidgetItem(value))
+
+
+class BudgetDialog(FormDialog):
+    def __init__(self, item: dict[str, Any], parent: QWidget | None = None) -> None:
+        super().__init__("Editar orçamento", parent)
+        self.name = QLineEdit(item["name"])
+        self.start = QDateEdit(QDate(item["start"].year, item["start"].month, item["start"].day))
+        self.start.setCalendarPopup(True)
+        self.end = QDateEdit(QDate(item["end"].year, item["end"].month, item["end"].day))
+        self.end.setCalendarPopup(True)
+        self.limit = QDoubleSpinBox()
+        self.limit.setRange(0, 10_000_000)
+        self.limit.setDecimals(2)
+        self.limit.setPrefix("R$ ")
+        self.limit.setValue(item["limit_cents"] / 100)
+        self.active = QCheckBox("Orçamento ativo")
+        self.active.setChecked(item.get("active", True))
+        self.form.addRow("Nome", self.name)
+        self.form.addRow("Início", self.start)
+        self.form.addRow("Fim", self.end)
+        self.form.addRow("Limite", self.limit)
+        self.form.addRow("Situação", self.active)
+        self.finish()
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name.text(),
+            "period_start": self.start.date().toPython(),
+            "period_end": self.end.date().toPython(),
+            "limit_cents": round(self.limit.value() * 100),
+            "active": self.active.isChecked(),
+        }
+
+
+class GoalDialog(FormDialog):
+    def __init__(self, item: dict[str, Any], parent: QWidget | None = None) -> None:
+        super().__init__("Editar meta", parent)
+        self.name = QLineEdit(item["name"])
+        self.current = QDoubleSpinBox()
+        self.current.setRange(0, 100_000_000)
+        self.current.setDecimals(2)
+        self.current.setPrefix("R$ ")
+        self.current.setValue(item["current_cents"] / 100)
+        self.target = QDoubleSpinBox()
+        self.target.setRange(0.01, 100_000_000)
+        self.target.setDecimals(2)
+        self.target.setPrefix("R$ ")
+        self.target.setValue(item["target_cents"] / 100)
+        self.active = QCheckBox("Meta ativa")
+        self.active.setChecked(item.get("active", True))
+        self.form.addRow("Nome", self.name)
+        self.form.addRow("Atual", self.current)
+        self.form.addRow("Alvo", self.target)
+        self.form.addRow("Situação", self.active)
+        self.finish()
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name.text(),
+            "current_cents": round(self.current.value() * 100),
+            "target_cents": round(self.target.value() * 100),
+            "active": self.active.isChecked(),
+        }
+
+
+class InstallmentDialog(FormDialog):
+    def __init__(self, item: dict[str, Any], parent: QWidget | None = None) -> None:
+        super().__init__("Editar parcela", parent)
+        self.due_date = QDateEdit(QDate(item["due_date"].year, item["due_date"].month, item["due_date"].day))
+        self.due_date.setCalendarPopup(True)
+        self.amount = QDoubleSpinBox()
+        self.amount.setRange(0.01, 10_000_000)
+        self.amount.setDecimals(2)
+        self.amount.setPrefix("R$ ")
+        self.amount.setValue(item["amount_cents"] / 100)
+        self.form.addRow("Vencimento", self.due_date)
+        self.form.addRow("Valor", self.amount)
+        self.finish()
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "due_date": self.due_date.date().toPython(),
+            "amount_cents": round(self.amount.value() * 100),
+        }
 
 
 class PlanningPage(QWidget):
@@ -435,9 +778,15 @@ class PlanningPage(QWidget):
         self.budget_limit.setPrefix("R$ ")
         add = QPushButton("Criar orçamento mensal")
         add.clicked.connect(self.create_budget)
+        edit = QPushButton("Editar")
+        edit.clicked.connect(self.edit_budget)
+        delete = QPushButton("Apagar")
+        delete.clicked.connect(self.delete_budget)
         form.addWidget(self.budget_name)
         form.addWidget(self.budget_limit)
         form.addWidget(add)
+        form.addWidget(edit)
+        form.addWidget(delete)
         layout.addLayout(form)
         self.budget_grid = table(["Orçamento", "Período", "Limite", "Realizado", "Uso"])
         layout.addWidget(self.budget_grid)
@@ -454,11 +803,17 @@ class PlanningPage(QWidget):
         self.goal_target.setPrefix("R$ ")
         add = QPushButton("Criar meta")
         add.clicked.connect(self.create_goal)
+        edit = QPushButton("Editar")
+        edit.clicked.connect(self.edit_goal)
+        delete = QPushButton("Apagar")
+        delete.clicked.connect(self.delete_goal)
         contribute = QPushButton("Adicionar R$ 100 à selecionada")
         contribute.clicked.connect(self.contribute_goal)
         form.addWidget(self.goal_name)
         form.addWidget(self.goal_target)
         form.addWidget(add)
+        form.addWidget(edit)
+        form.addWidget(delete)
         form.addWidget(contribute)
         layout.addLayout(form)
         self.goal_grid = table(["Meta", "Atual", "Alvo", "Progresso"])
@@ -482,9 +837,22 @@ class PlanningPage(QWidget):
                 self.plan_account.addItem(item["name"], item["id"])
         add = QPushButton("Criar parcelamento")
         add.clicked.connect(self.create_installment)
+        edit = QPushButton("Editar parcela")
+        edit.clicked.connect(self.edit_installment)
+        delete = QPushButton("Apagar parcelamento")
+        delete.clicked.connect(self.delete_installment_plan)
         pay = QPushButton("Pagar parcela selecionada")
         pay.clicked.connect(self.pay_installment)
-        for widget in [self.plan_description, self.plan_total, self.plan_count, self.plan_account, add, pay]:
+        for widget in [
+            self.plan_description,
+            self.plan_total,
+            self.plan_count,
+            self.plan_account,
+            add,
+            edit,
+            delete,
+            pay,
+        ]:
             form.addWidget(widget)
         layout.addLayout(form)
         self.installment_grid = table(["Descrição", "Parcela", "Vencimento", "Valor", "Situação"])
@@ -505,11 +873,73 @@ class PlanningPage(QWidget):
         self.budget_name.clear()
         self.refresh()
 
+    def edit_budget(self) -> None:
+        row = self.budget_grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Editar", "Selecione um orçamento.")
+            return
+        item = self.budgets()[row]
+        dialog = BudgetDialog(item, self)
+        if not dialog.exec():
+            return
+        try:
+            self.facade.update_budget(item["id"], **dialog.payload())
+        except (ValueError, LookupError) as error:
+            QMessageBox.warning(self, "Orçamento inválido", str(error))
+            return
+        self.refresh()
+
+    def delete_budget(self) -> None:
+        row = self.budget_grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Apagar", "Selecione um orçamento.")
+            return
+        item = self.budgets()[row]
+        if not confirm_delete(self, "Apagar orçamento", "Deseja apagar o orçamento selecionado?"):
+            return
+        try:
+            self.facade.delete_budget(item["id"])
+        except Exception as error:
+            QMessageBox.warning(self, "Não foi possível apagar", str(error))
+            return
+        self.refresh()
+
     def create_goal(self) -> None:
         if len(self.goal_name.text().strip()) < 2:
             return
         self.facade.create_goal(name=self.goal_name.text().strip(), target_cents=round(self.goal_target.value() * 100))
         self.goal_name.clear()
+        self.refresh()
+
+    def edit_goal(self) -> None:
+        row = self.goal_grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Editar", "Selecione uma meta.")
+            return
+        item = self.goals()[row]
+        dialog = GoalDialog(item, self)
+        if not dialog.exec():
+            return
+        try:
+            self.facade.update_goal(item["id"], **dialog.payload())
+        except (ValueError, LookupError) as error:
+            QMessageBox.warning(self, "Meta inválida", str(error))
+            return
+        self.refresh()
+
+    def delete_goal(self) -> None:
+        row = self.goal_grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Apagar", "Selecione uma meta.")
+            return
+        item = self.goals()[row]
+        if not confirm_delete(self, "Apagar meta", "Deseja apagar a meta selecionada?"):
+            return
+        try:
+            self.facade.delete_goal(item["id"])
+        except Exception as error:
+            QMessageBox.warning(self, "Não foi possível apagar", str(error))
+            return
         self.refresh()
 
     def contribute_goal(self) -> None:
@@ -531,6 +961,41 @@ class PlanningPage(QWidget):
         self.plan_description.clear()
         self.refresh()
 
+    def edit_installment(self) -> None:
+        row = self.installment_grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Editar", "Selecione uma parcela.")
+            return
+        item = self.installments()[row]
+        dialog = InstallmentDialog(item, self)
+        if not dialog.exec():
+            return
+        try:
+            self.facade.update_installment(item["id"], **dialog.payload())
+        except (ValueError, LookupError) as error:
+            QMessageBox.warning(self, "Parcela inválida", str(error))
+            return
+        self.refresh()
+
+    def delete_installment_plan(self) -> None:
+        row = self.installment_grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Apagar", "Selecione uma parcela do parcelamento.")
+            return
+        item = self.installments()[row]
+        if not confirm_delete(
+            self,
+            "Apagar parcelamento",
+            "Deseja apagar todo o parcelamento da parcela selecionada?",
+        ):
+            return
+        try:
+            self.facade.delete_installment_plan(item["plan_id"])
+        except Exception as error:
+            QMessageBox.warning(self, "Não foi possível apagar", str(error))
+            return
+        self.refresh()
+
     def pay_installment(self) -> None:
         row = self.installment_grid.currentRow()
         if row >= 0:
@@ -540,15 +1005,24 @@ class PlanningPage(QWidget):
                 QMessageBox.warning(self, "Parcela", str(error))
             self.refresh()
 
+    def budgets(self) -> list[dict[str, Any]]:
+        return self.facade.budgets()
+
+    def goals(self) -> list[dict[str, Any]]:
+        return self.facade.goals()
+
+    def installments(self) -> list[dict[str, Any]]:
+        return self.facade.installments()
+
     def refresh(self) -> None:
-        budgets = self.facade.budgets()
+        budgets = self.budgets()
         self.budget_grid.setRowCount(len(budgets))
         for index, item in enumerate(budgets):
             percentage = 0 if item["limit_cents"] == 0 else min(999, round(item["used_cents"] * 100 / item["limit_cents"]))
             values = [item["name"], f"{item['start']:%d/%m/%Y} a {item['end']:%d/%m/%Y}", money(item["limit_cents"]), money(item["used_cents"]), f"{percentage}%"]
             for column, value in enumerate(values):
                 self.budget_grid.setItem(index, column, QTableWidgetItem(value))
-        goals = self.facade.goals()
+        goals = self.goals()
         self.goal_ids = [item["id"] for item in goals]
         self.goal_grid.setRowCount(len(goals))
         for index, item in enumerate(goals):
@@ -556,7 +1030,7 @@ class PlanningPage(QWidget):
             values = [item["name"], money(item["current_cents"]), money(item["target_cents"]), f"{percentage}%"]
             for column, value in enumerate(values):
                 self.goal_grid.setItem(index, column, QTableWidgetItem(value))
-        installments = self.facade.installments()
+        installments = self.installments()
         self.installment_ids = [item["id"] for item in installments]
         self.installment_grid.setRowCount(len(installments))
         for index, item in enumerate(installments):
@@ -798,6 +1272,129 @@ class SqlConsolePage(QWidget):
         self.status.setText("Área limpa.")
 
 
+class DatabaseBrowserPage(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.service = SqlConsoleService()
+        layout = QVBoxLayout(self)
+        title = QLabel("Banco de dados")
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
+        hint = QLabel("Visualização somente leitura das tabelas SQLite da aplicação.")
+        hint.setObjectName("summary")
+        layout.addWidget(hint)
+
+        controls = QHBoxLayout()
+        self.include_internal = QCheckBox("Mostrar tabelas internas do SQLite")
+        self.include_internal.stateChanged.connect(self.refresh)
+        self.limit = QSpinBox()
+        self.limit.setRange(1, 10_000)
+        self.limit.setValue(500)
+        self.limit.valueChanged.connect(self.load_selected_table)
+        reload_button = QPushButton("Atualizar")
+        reload_button.clicked.connect(self.refresh)
+        copy_schema = QPushButton("Copiar estrutura SQL")
+        copy_schema.clicked.connect(self.copy_schema_sql)
+        download_database = QPushButton("Baixar arquivo SQLite")
+        download_database.clicked.connect(self.download_database_file)
+        controls.addWidget(self.include_internal)
+        controls.addWidget(QLabel("Limite de linhas:"))
+        controls.addWidget(self.limit)
+        controls.addStretch()
+        controls.addWidget(copy_schema)
+        controls.addWidget(download_database)
+        controls.addWidget(reload_button)
+        layout.addLayout(controls)
+
+        content = QHBoxLayout()
+        self.tables = QListWidget()
+        self.tables.setFixedWidth(280)
+        self.tables.currentRowChanged.connect(self.load_selected_table)
+        content.addWidget(self.tables)
+        right = QVBoxLayout()
+        self.status = QLabel("Selecione uma tabela para visualizar.")
+        right.addWidget(self.status)
+        self.description = QLabel()
+        self.description.setWordWrap(True)
+        self.description.setObjectName("summary")
+        right.addWidget(self.description)
+        self.grid = table([])
+        right.addWidget(self.grid, 1)
+        content.addLayout(right, 1)
+        layout.addLayout(content, 1)
+
+    def refresh(self) -> None:
+        current = self.tables.currentItem().data(Qt.UserRole) if self.tables.currentItem() else None
+        self.tables.blockSignals(True)
+        self.tables.clear()
+        rows = self.service.tables(include_internal=self.include_internal.isChecked())
+        for item in rows:
+            label = f"{item.name} ({item.row_count})"
+            table_item = QListWidgetItem(label)
+            table_item.setData(Qt.UserRole, item.name)
+            table_item.setData(Qt.UserRole + 1, item.description)
+            self.tables.addItem(table_item)
+        self.tables.blockSignals(False)
+        if not rows:
+            self.grid.clear()
+            self.grid.setRowCount(0)
+            self.grid.setColumnCount(0)
+            self.status.setText("Nenhuma tabela encontrada.")
+            self.description.clear()
+            return
+        selected_index = next((index for index, item in enumerate(rows) if item.name == current), 0)
+        self.tables.setCurrentRow(selected_index)
+        self.load_selected_table()
+
+    def load_selected_table(self) -> None:
+        current = self.tables.currentItem()
+        if current is None:
+            return
+        table_name = current.data(Qt.UserRole)
+        self.description.setText(str(current.data(Qt.UserRole + 1)))
+        try:
+            output = self.service.table_data(str(table_name), limit=self.limit.value())
+        except Exception as error:
+            self.status.setText(f"Erro: {error}")
+            QMessageBox.critical(self, "Erro ao visualizar tabela", str(error))
+            return
+        self.status.setText(output.message)
+        self.grid.clear()
+        self.grid.setColumnCount(len(output.columns))
+        self.grid.setHorizontalHeaderLabels(output.columns)
+        self.grid.setRowCount(len(output.rows))
+        for row_index, row in enumerate(output.rows):
+            for column, value in enumerate(row):
+                self.grid.setItem(row_index, column, QTableWidgetItem("" if value is None else str(value)))
+
+    def copy_schema_sql(self) -> None:
+        try:
+            sql = self.service.schema_sql(include_internal=self.include_internal.isChecked())
+        except Exception as error:
+            QMessageBox.critical(self, "Erro ao copiar estrutura", str(error))
+            return
+        QApplication.clipboard().setText(sql)
+        self.status.setText("Estrutura SQL copiada para a área de transferência.")
+        QMessageBox.information(self, "Estrutura SQL", "Estrutura do banco copiada.")
+
+    def download_database_file(self) -> None:
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar banco SQLite",
+            "financeiro-kairo.sqlite3",
+            "Banco SQLite (*.sqlite3 *.db)",
+        )
+        if not filename:
+            return
+        try:
+            path = self.service.copy_database_file(Path(filename))
+        except Exception as error:
+            QMessageBox.critical(self, "Erro ao salvar banco", str(error))
+            return
+        self.status.setText(f"Arquivo SQLite salvo em: {path}")
+        QMessageBox.information(self, "Banco SQLite", f"Arquivo salvo em:\n{path}")
+
+
 class MainWindow(QMainWindow):
     def __init__(self, facade: ApplicationFacade | None = None) -> None:
         super().__init__()
@@ -818,6 +1415,7 @@ class MainWindow(QMainWindow):
             "Planejamento",
             "Gráficos",
             "Relatórios e cópias",
+            "Banco de dados",
             "Console SQL",
         ]
         self.menu.addItems(labels)
@@ -831,6 +1429,7 @@ class MainWindow(QMainWindow):
             PlanningPage(self.facade),
             ChartsPage(self.facade),
             ReportsPage(self.facade),
+            DatabaseBrowserPage(),
             SqlConsolePage(),
         ]:
             self.stack.addWidget(page)
@@ -846,6 +1445,7 @@ class MainWindow(QMainWindow):
             QListWidget::item { padding: 13px; border-radius: 7px; }
             QListWidget::item:selected { background: #2f6fed; }
             QLabel#pageTitle { font-size: 25px; font-weight: 700; margin: 8px; }
+            QLabel#sectionTitle { font-size: 18px; font-weight: 700; margin: 8px; }
             QLabel#summary { font-size: 17px; background: white; padding: 20px; border-radius: 10px; }
             QLabel#warning { background: #fff4d6; color: #6a4a00; padding: 12px; border: 1px solid #f0c65d; border-radius: 7px; }
             QPushButton { background: #2f6fed; color: white; padding: 9px 15px; border: 0; border-radius: 7px; }

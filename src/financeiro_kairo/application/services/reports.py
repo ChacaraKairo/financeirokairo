@@ -11,7 +11,13 @@ from reportlab.pdfgen.canvas import Canvas
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from financeiro_kairo.domain.models import Category, Transaction, TransactionType
+from financeiro_kairo.domain.models import (
+    Account,
+    AccountType,
+    Category,
+    Transaction,
+    TransactionType,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +31,22 @@ class FinancialSummary:
 class CategoryTotal:
     category_id: int | None
     category_name: str
+    amount_cents: int
+
+
+@dataclass(frozen=True, slots=True)
+class CreditCardInvoiceTotal:
+    account_id: int
+    account_name: str
+    amount_cents: int
+
+
+@dataclass(frozen=True, slots=True)
+class CreditCardInvoiceTransaction:
+    account_id: int
+    account_name: str
+    occurred_on: date
+    description: str
     amount_cents: int
 
 
@@ -59,6 +81,59 @@ class ReportService:
             .order_by(func.sum(Transaction.amount_cents).desc())
         ).all()
         return [CategoryTotal(row[0], str(row[1]), int(row[2] or 0)) for row in rows]
+
+    def credit_card_invoice(
+        self, start: date, end: date, *, recent_limit: int = 10
+    ) -> tuple[list[CreditCardInvoiceTotal], list[CreditCardInvoiceTransaction]]:
+        totals_rows = self.session.execute(
+            select(
+                Account.id,
+                Account.name,
+                func.coalesce(func.sum(Transaction.amount_cents), 0),
+            )
+            .join(Transaction, Transaction.account_id == Account.id)
+            .where(
+                Account.account_type == AccountType.CREDIT_CARD.value,
+                Account.active.is_(True),
+                Transaction.transaction_type == TransactionType.EXPENSE.value,
+                Transaction.occurred_on.between(start, end),
+            )
+            .group_by(Account.id, Account.name)
+            .order_by(func.sum(Transaction.amount_cents).desc())
+        ).all()
+        transactions_rows = self.session.execute(
+            select(
+                Account.id,
+                Account.name,
+                Transaction.occurred_on,
+                Transaction.description,
+                Transaction.amount_cents,
+            )
+            .join(Transaction, Transaction.account_id == Account.id)
+            .where(
+                Account.account_type == AccountType.CREDIT_CARD.value,
+                Account.active.is_(True),
+                Transaction.transaction_type == TransactionType.EXPENSE.value,
+                Transaction.occurred_on.between(start, end),
+            )
+            .order_by(Transaction.occurred_on.desc(), Transaction.id.desc())
+            .limit(recent_limit)
+        ).all()
+        totals = [
+            CreditCardInvoiceTotal(int(row[0]), str(row[1]), int(row[2] or 0))
+            for row in totals_rows
+        ]
+        transactions = [
+            CreditCardInvoiceTransaction(
+                int(row[0]),
+                str(row[1]),
+                row[2],
+                str(row[3]),
+                int(row[4] or 0),
+            )
+            for row in transactions_rows
+        ]
+        return totals, transactions
 
     def transactions_page(
         self,

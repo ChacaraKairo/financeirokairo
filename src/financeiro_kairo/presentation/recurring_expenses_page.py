@@ -177,8 +177,11 @@ class RecurringExpensesPage(QWidget):
         create.clicked.connect(self.create_expense)
         edit = QPushButton("Editar selecionada")
         edit.clicked.connect(self.edit_expense)
+        delete = QPushButton("Apagar selecionada")
+        delete.clicked.connect(self.delete_expense)
         actions.addWidget(create)
         actions.addWidget(edit)
+        actions.addWidget(delete)
         actions.addStretch()
         layout.addLayout(actions)
         self.expense_grid = table(
@@ -225,6 +228,27 @@ class RecurringExpensesPage(QWidget):
             return
         if RecurringExpenseDialog(self.facade, self.expenses[row], self).exec():
             self.refresh()
+
+    def delete_expense(self) -> None:
+        row = self.expense_grid.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Apagar", "Selecione uma despesa recorrente.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Apagar despesa recorrente",
+            "Deseja apagar a despesa recorrente selecionada?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            self.facade.delete_recurring_expense(self.expenses[row]["id"])
+        except Exception as error:
+            QMessageBox.warning(self, "Não foi possível apagar", str(error))
+            return
+        self.refresh()
 
     def set_amount(self) -> None:
         item = self._selected_occurrence()

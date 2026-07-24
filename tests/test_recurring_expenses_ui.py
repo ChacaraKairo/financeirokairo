@@ -30,8 +30,9 @@ def test_main_window_contains_recurring_expenses_module():
     app = QApplication.instance() or QApplication([])
     window = FinanceiroKairoWindow(FakeFacade())
 
-    assert window.stack.count() == 10
+    assert window.stack.count() == 11
     assert window.menu.item(6).text() == "Despesas recorrentes"
+    assert window.menu.item(9).text() == "Banco de dados"
 
     window.close()
     app.processEvents()
